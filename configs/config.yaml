@@ -1,0 +1,114 @@
+# ============================================================
+# FMCG Low-Data CV Pipeline — Configuration
+# ============================================================
+
+data:
+  image_dir: "data/raw"
+  annotations_csv: "data/annotations.csv"
+  test_split: 0.15          # 15 images held out for final eval
+  val_split: 0.10           # 10 images for validation
+  image_size: 224
+  num_workers: 4
+
+  # FMCG product categories (customize to your SKU set)
+  categories:
+    - "cola_can_red"
+    - "cola_can_blue"
+    - "chips_lays_classic"
+    - "chips_lays_masala"
+    - "maggi_noodles_masala"
+    - "tide_detergent_1kg"
+    - "amul_butter_500g"
+    - "britannia_biscuits"
+    - "parle_g_biscuits"
+    - "surf_excel_detergent"
+
+  # Text prompts for CLIP zero-shot (one per category above)
+  clip_prompts:
+    cola_can_red:       ["a photo of a red Coca-Cola can", "Coke can on a shelf", "red cola beverage can"]
+    cola_can_blue:      ["a photo of a blue Pepsi can", "Pepsi can product", "blue cola can on shelf"]
+    chips_lays_classic: ["Lay's classic potato chips bag", "yellow Lays chips packet", "Lays original flavor snack"]
+    chips_lays_masala:  ["Lay's masala chips packet", "red Lays masala flavor bag", "spicy masala chips"]
+    maggi_noodles_masala: ["Maggi 2-minute noodles packet", "Maggi masala noodles", "yellow Maggi noodle pack"]
+    tide_detergent_1kg: ["Tide detergent powder box", "blue Tide laundry detergent", "Tide 1kg pack"]
+    amul_butter_500g:   ["Amul butter carton", "yellow Amul butter box", "Amul dairy butter 500g"]
+    britannia_biscuits: ["Britannia Good Day biscuit packet", "Britannia cookies packet", "Good Day biscuits"]
+    parle_g_biscuits:   ["Parle-G biscuit packet", "yellow Parle G biscuits", "Parle G glucose biscuits"]
+    surf_excel_detergent: ["Surf Excel detergent packet", "blue Surf Excel laundry powder", "Surf Excel washing powder"]
+
+annotation:
+  confidence_threshold: 0.85   # Auto-accept CLIP predictions above this
+  k_neighbors: 5               # k-NN for label propagation
+  active_learning_budget: 20   # Number of images to manually label
+
+model:
+  backbone: "ViT-L/14"         # CLIP backbone (best quality)
+  # backbone: "ViT-B/32"       # Faster alternative
+  embedding_dim: 768           # ViT-L/14 output dim (512 for ViT-B/32)
+  num_classes: 10              # Number of product categories
+  
+  classifier:
+    hidden_dim: 256
+    dropout: 0.3
+    use_bn: true
+
+training:
+  # Phase 1: Linear probe (head only)
+  phase1:
+    epochs: 30
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    freeze_backbone: true
+
+  # Phase 2: Fine-tune last 2 transformer blocks
+  phase2:
+    epochs: 20
+    lr: 5.0e-6
+    weight_decay: 1.0e-4
+    freeze_backbone: false
+    unfreeze_layers: 2          # Number of final transformer blocks to unfreeze
+
+  batch_size: 32
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_epochs: 3
+  label_smoothing: 0.1
+  mixup_alpha: 0.2
+  cutmix_alpha: 1.0
+  
+  # Checkpoint
+  checkpoint_dir: "checkpoints"
+  save_best: true
+  patience: 10                  # Early stopping patience
+
+augmentation:
+  # Standard augmentations
+  random_horizontal_flip: 0.5
+  random_rotation: 15           # degrees
+  color_jitter:
+    brightness: 0.3
+    contrast: 0.3
+    saturation: 0.3
+    hue: 0.1
+  random_grayscale: 0.05
+  
+  # Shelf-specific augmentations
+  perspective_warp: 0.3         # Simulate camera angle
+  gaussian_blur: 0.2            # Simulate motion blur / out-of-focus
+  random_shadow: 0.3            # Simulate shelf lighting
+  occlusion:                    # Simulate partial shelf occlusion
+    probability: 0.2
+    max_holes: 3
+    max_size: 32
+
+  # Advanced
+  randaugment:
+    n: 2
+    m: 9
+  normalize:
+    mean: [0.48145466, 0.4578275, 0.40821073]   # CLIP normalization
+    std: [0.26862954, 0.26130258, 0.27577711]
+
+evaluation:
+  metrics: ["accuracy", "f1_macro", "confusion_matrix", "per_class_accuracy"]
+  output_dir: "results"
